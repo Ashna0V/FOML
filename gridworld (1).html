@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Grid World — Q-Learning Pathfinder</title>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap" rel="stylesheet"/>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0f1117;
+      --bg2:       #181c26;
+      --bg3:       #1e2333;
+      --border:    rgba(255,255,255,0.08);
+      --border2:   rgba(255,255,255,0.14);
+      --text:      #e8e6df;
+      --text2:     #9c9a92;
+      --text3:     #5f5e5a;
+      --blue:      #3b8bd4;
+      --blue-bg:   rgba(59,139,212,0.12);
+      --blue-bg2:  rgba(59,139,212,0.22);
+      --green:     #63991a;
+      --green-bg:  rgba(99,153,26,0.14);
+      --red:       #e24b4a;
+      --red-bg:    rgba(226,75,74,0.12);
+      --purple:    #7f77dd;
+      --purple-bg: rgba(127,119,221,0.14);
+      --amber:     #ef9f27;
+      --amber-bg:  rgba(239,159,39,0.16);
+      --visited-bg:rgba(59,139,212,0.07);
+      --radius:    8px;
+      --cell:      84px;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Space Mono', monospace;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 32px 16px 48px;
+      gap: 24px;
+    }
+
+    /* ── Header ── */
+    header { text-align: center; }
+    header h1 {
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: .04em;
+      color: var(--text);
+      margin-bottom: 4px;
+    }
+    header p { font-size: 11px; color: var(--text2); letter-spacing: .06em; text-transform: uppercase; }
+
+    /* ── Legend ── */
+    #legend {
+      display: flex; gap: 16px; flex-wrap: wrap;
+      justify-content: center; padding: 12px 20px;
+      background: var(--bg2); border: 0.5px solid var(--border);
+      border-radius: var(--radius);
+    }
+    .leg { display: flex; align-items: center; gap: 7px; font-size: 11px; color: var(--text2); }
+    .leg-dot { width: 13px; height: 13px; border-radius: 3px; }
+
+    /* ── Grid ── */
+    #grid-wrap {
+      border: 1.5px solid var(--border2);
+      border-radius: 12px;
+      overflow: hidden;
+      background: var(--bg2);
+      box-shadow: 0 0 40px rgba(0,0,0,.5);
+    }
+    .row { display: flex; }
+    .cell {
+      width: var(--cell); height: var(--cell);
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      position: relative; gap: 3px;
+      border-right: 0.5px solid var(--border);
+      border-bottom: 0.5px solid var(--border);
+      transition: background .22s ease;
+    }
+    .row:last-child .cell { border-bottom: none; }
+    .cell:last-child      { border-right: none; }
+
+    .cell-icon  { font-size: 26px; line-height: 1; }
+    .cell-coord { font-size: 9px; color: var(--text3); letter-spacing: .04em; }
+    .exp-badge  {
+      position: absolute; top: 4px; right: 5px;
+      font-size: 8px; color: var(--red); opacity: .8; font-weight: 700;
+    }
+
+    .cell.start      { background: var(--blue-bg); }
+    .cell.end        { background: var(--purple-bg); }
+    .cell.reward     { background: var(--green-bg); }
+    .cell.punishment { background: var(--red-bg); }
+    .cell.agent      { background: var(--amber-bg); }
+    .cell.visited    { background: var(--visited-bg); }
+
+    @keyframes flash {
+      0%   { background: rgba(59,139,212,.4); }
+      100% { background: var(--visited-bg); }
+    }
+    .path-flash { animation: flash .35s ease-out forwards; }
+
+    /* ── Stats row ── */
+    #stats {
+      display: flex; gap: 24px; flex-wrap: wrap; justify-content: center;
+      font-size: 12px; color: var(--text2);
+    }
+    .stat { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+    .stat-val { font-size: 22px; font-weight: 700; color: var(--text); line-height: 1; }
+    .stat-lbl { font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: var(--text3); }
+
+    /* ── Controls ── */
+    #controls { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+    button {
+      font-family: 'Space Mono', monospace;
+      font-size: 12px; padding: 8px 20px;
+      border: 1px solid var(--border2); border-radius: 6px;
+      background: var(--bg3); color: var(--text);
+      cursor: pointer; transition: background .15s, transform .1s, border-color .15s;
+      letter-spacing: .04em;
+    }
+    button:hover   { background: #252a3a; border-color: rgba(255,255,255,.22); }
+    button:active  { transform: scale(.97); }
+    button.primary { border-color: var(--blue); color: var(--blue); }
+    button.primary:hover { background: rgba(59,139,212,.12); }
+    button.danger  { border-color: var(--red); color: var(--red); }
+    button.danger:hover  { background: rgba(226,75,74,.1); }
+    button:disabled { opacity: .35; cursor: not-allowed; }
+
+    /* ── Speed slider ── */
+    #speed-wrap {
+      display: flex; align-items: center; gap: 12px;
+      font-size: 11px; color: var(--text2);
+      background: var(--bg2); border: 0.5px solid var(--border);
+      border-radius: var(--radius); padding: 10px 18px;
+    }
+    input[type=range] {
+      -webkit-appearance: none; width: 140px; height: 4px;
+      border-radius: 2px; background: var(--border2); outline: none;
+    }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none; width: 16px; height: 16px;
+      border-radius: 50%; background: var(--blue); cursor: pointer;
+    }
+    #speed-val { min-width: 40px; color: var(--text); font-weight: 700; }
+
+    /* ── Log ── */
+    #log-section { width: 100%; max-width: 480px; }
+    #log-title { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--text3); margin-bottom: 6px; }
+    #log {
+      height: 110px; overflow-y: auto;
+      font-size: 11px; line-height: 1.8;
+      color: var(--text2);
+      background: var(--bg2);
+      border: 0.5px solid var(--border); border-radius: var(--radius);
+      padding: 10px 14px;
+    }
+    #log::-webkit-scrollbar { width: 4px; }
+    #log::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+    #log .ok   { color: #7dbb3c; }
+    #log .warn { color: var(--red); }
+    #log .info { color: var(--blue); }
+
+    /* ── Path output ── */
+    #path-section { width: 100%; max-width: 480px; }
+    #path-display {
+      font-size: 11px; color: var(--text2); line-height: 2;
+      background: var(--bg2); border: 0.5px solid var(--border);
+      border-radius: var(--radius); padding: 10px 14px;
+      min-height: 40px; word-break: break-all;
+    }
+    #path-display .arrow { color: var(--text3); }
+    #path-display .node  { color: var(--blue); }
+    #path-display .node.reward-node  { color: var(--green); }
+    #path-display .node.goal-node    { color: var(--purple); }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Grid World Pathfinder</h1>
+  <p>Algorithm visualiser — 4 × 5 environment</p>
+</header>
+
+<div id="legend">
+  <div class="leg"><div class="leg-dot" style="background:var(--blue-bg);border:1px solid var(--blue)"></div>Start (3,0)</div>
+  <div class="leg"><div class="leg-dot" style="background:var(--purple-bg);border:1px solid var(--purple)"></div>Goal (0,3)</div>
+  <div class="leg"><div class="leg-dot" style="background:var(--green-bg);border:1px solid var(--green)"></div>Reward ⭐</div>
+  <div class="leg"><div class="leg-dot" style="background:var(--red-bg);border:1px solid var(--red)"></div>Trap 💀</div>
+  <div class="leg"><div class="leg-dot" style="background:var(--amber-bg);border:1px solid var(--amber)"></div>Agent 🤖</div>
+  <div class="leg"><div class="leg-dot" style="background:var(--visited-bg);border:1px solid rgba(59,139,212,.3)"></div>Visited</div>
+</div>
+
+<div id="grid-wrap"><div id="grid"></div></div>
+
+<div id="stats">
+  <div class="stat"><div class="stat-val" id="s-steps">0</div><div class="stat-lbl">Steps</div></div>
+  <div class="stat"><div class="stat-val" id="s-resets">0</div><div class="stat-lbl">Resets</div></div>
+  <div class="stat"><div class="stat-val" id="s-exp">0</div><div class="stat-lbl">Blocked moves</div></div>
+</div>
+
+<div id="controls">
+  <button class="primary" id="btn-step"  onclick="step()">Step ▶</button>
+  <button class="primary" id="btn-run"   onclick="toggleRun()">Auto-run ▷</button>
+  <button class="danger"  id="btn-reset" onclick="hardReset()">Reset ↺</button>
+</div>
+
+<div id="speed-wrap">
+  Delay: <input type="range" id="speed" min="60" max="900" value="420" step="60"
+    oninput="document.getElementById('speed-val').textContent=this.value+'ms'">
+  <span id="speed-val">420ms</span>
+</div>
+
+<div id="log-section">
+  <div id="log-title">Event log</div>
+  <div id="log"></div>
+</div>
+
+<div id="path-section">
+  <div id="log-title" style="margin-bottom:6px">Current path</div>
+  <div id="path-display">—</div>
+</div>
+
+<script>
+/* ─────────────────────────────────────────
+   Environment definition  (matches Python)
+───────────────────────────────────────── */
+const ROWS    = 4, COLS = 5;
+const START   = [3, 0];
+const END_    = [0, 3];
+const REWARDS = [[2,2],[0,3]];
+const PUNISH  = [[1,1],[1,2],[3,1],[3,2],[2,3]];
+const ACTIONS = [[0,1],[0,-1],[1,0],[-1,0]];
+const ANAMES  = ['→','←','↓','↑'];
+
+/* ─────── state ─────── */
+let agentPos, experience, path, running=false, timer=null, steps=0, resets=0;
+
+function hardReset(){
+  clearInterval(timer); running=false;
+  document.getElementById('btn-run').textContent='Auto-run ▷';
+  agentPos=[...START]; experience=[]; path=[[...START]];
+  steps=0; resets=0;
+  setStat('s-steps',0); setStat('s-resets',0); setStat('s-exp',0);
+  document.getElementById('log').innerHTML='';
+  render(); renderPath();
+  log('Agent placed at start (3,0)','info');
+}
+
+/* ─────── helpers ─────── */
+function setStat(id,v){ document.getElementById(id).textContent=v; }
+function posKey(r,c){ return r+','+c; }
+function isExpBlocked(r,c,ai){
+  return experience.some(e=>e.key===posKey(r,c)&&e.ai===ai);
+}
+function isReward(r,c){ return REWARDS.some(x=>x[0]===r&&x[1]===c); }
+function isPunish(r,c){ return PUNISH.some(x=>x[0]===r&&x[1]===c); }
+function inPath(r,c)  { return path.some(p=>p[0]===r&&p[1]===c); }
+function cellType(r,c){
+  if(r===END_[0]&&c===END_[1]) return 'end';
+  if(isReward(r,c))            return 'reward';
+  if(isPunish(r,c))            return 'punishment';
+  if(r===START[0]&&c===START[1]) return 'start';
+  return 'empty';
+}
+
+/* ─────── log ─────── */
+function log(msg, cls=''){
+  const d=document.getElementById('log');
+  const line=document.createElement('div');
+  if(cls) line.className=cls;
+  line.textContent='› '+msg;
+  d.appendChild(line);
+  d.scrollTop=d.scrollHeight;
+}
+
+/* ─────── render grid ─────── */
+const ICONS={end:'🏁',reward:'⭐',punishment:'💀',start:'🚀',empty:'',agent:'🤖'};
+
+function render(){
+  const g=document.getElementById('grid');
+  g.innerHTML='';
+  const [ar,ac]=agentPos;
+
+  for(let r=0;r<ROWS;r++){
+    const row=document.createElement('div'); row.className='row';
+    for(let c=0;c<COLS;c++){
+      const cell=document.createElement('div');
+      const t=cellType(r,c);
+      const isAgent=r===ar&&c===ac;
+      const wasVisited=inPath(r,c)&&!isAgent;
+
+      cell.className='cell';
+      if(isAgent)         cell.classList.add('agent');
+      else if(t==='end')  cell.classList.add('end');
+      else if(t==='reward')     cell.classList.add('reward');
+      else if(t==='punishment') cell.classList.add('punishment');
+      else if(t==='start')      cell.classList.add('start');
+      else if(wasVisited)       cell.classList.add('visited');
+
+      // icon
+      const icon=document.createElement('div'); icon.className='cell-icon';
+      icon.textContent=isAgent?'🤖':ICONS[t];
+      cell.appendChild(icon);
+
+      // coordinate label
+      const coord=document.createElement('div'); coord.className='cell-coord';
+      coord.textContent='('+r+','+c+')';
+      cell.appendChild(coord);
+
+      // blocked-actions badge
+      const blockedCount=ACTIONS.filter((_,ai)=>isExpBlocked(r,c,ai)).length;
+      if(blockedCount>0){
+        const b=document.createElement('div'); b.className='exp-badge';
+        b.textContent='✕'+blockedCount;
+        cell.appendChild(b);
+      }
+      row.appendChild(cell);
+    }
+    g.appendChild(row);
+  }
+}
+
+/* ─────── render path strip ─────── */
+function renderPath(){
+  const d=document.getElementById('path-display');
+  if(path.length===0){ d.textContent='—'; return; }
+  d.innerHTML=path.map((p,i)=>{
+    const t=cellType(p[0],p[1]);
+    let cls='node';
+    if(t==='reward') cls+=' reward-node';
+    if(t==='end')    cls+=' goal-node';
+    const label='('+p[0]+','+p[1]+')';
+    const arrow=i<path.length-1?'<span class="arrow"> → </span>':'';
+    return '<span class="'+cls+'">'+label+'</span>'+arrow;
+  }).join('');
+}
+
+/* ─────── core step ─────── */
+function step(){
+  const [cr,cc]=agentPos;
+
+  // already at goal?
+  if(cr===END_[0]&&cc===END_[1]){
+    log('🏁 Already at goal — press Reset to try again.','info'); return;
+  }
+
+  let moved=false;
+
+  for(let ai=0;ai<ACTIONS.length;ai++){
+    if(isExpBlocked(cr,cc,ai)) continue;           // experience says skip
+
+    const [dr,dc]=ACTIONS[ai];
+    const nr=cr+dr, nc=cc+dc;
+
+    // out of bounds
+    if(nr<0||nr>=ROWS||nc<0||nc>=COLS){
+      experience.push({key:posKey(cr,cc),ai});
+      setStat('s-exp',experience.length);
+      log('OOB: blocked '+ANAMES[ai]+' from ('+cr+','+cc+')','warn');
+      continue;
+    }
+
+    // cycle avoidance — already in current path
+    if(inPath(nr,nc)) continue;
+
+    // make the move
+    agentPos=[nr,nc];
+    path.push([nr,nc]);
+    steps++; setStat('s-steps',steps);
+
+    // hit a trap
+    if(isPunish(nr,nc)){
+      experience.push({key:posKey(cr,cc),ai});
+      setStat('s-exp',experience.length);
+      log('💀 Trap at ('+nr+','+nc+')! Block '+ANAMES[ai]+' from ('+cr+','+cc+'). Resetting…','warn');
+      render(); renderPath();
+      setTimeout(()=>{
+        agentPos=[...START]; path=[[...START]]; resets++;
+        setStat('s-resets',resets);
+        render(); renderPath();
+        log('↺ Back to start','info');
+      },350);
+      return;
+    }
+
+    // collected reward
+    if(isReward(nr,nc) && !(nr===END_[0]&&nc===END_[1]))
+      log('⭐ Reward at ('+nr+','+nc+')','ok');
+    else
+      log('Move '+ANAMES[ai]+' → ('+nr+','+nc+')');
+
+    // reached goal
+    if(nr===END_[0]&&nc===END_[1]){
+      render(); renderPath();
+      log('🏁 GOAL in '+steps+' steps / '+resets+' resets!','ok');
+      if(running){ clearInterval(timer); running=false; document.getElementById('btn-run').textContent='Auto-run ▷'; }
+      return;
+    }
+
+    moved=true;
+    render(); renderPath();
+    return;
+  }
+
+  // stuck — no valid action
+  if(!moved){
+    if(path.length>=2){
+      const prev=path[path.length-2];
+      const dr=cr-prev[0], dc=cc-prev[1];
+      const bai=ACTIONS.findIndex(a=>a[0]===dr&&a[1]===dc);
+      if(bai>=0){ experience.push({key:posKey(prev[0],prev[1]),ai:bai}); setStat('s-exp',experience.length); }
+    }
+    log('⚠ Stuck at ('+cr+','+cc+')! Resetting…','warn');
+    render(); renderPath();
+    setTimeout(()=>{
+      agentPos=[...START]; path=[[...START]]; resets++;
+      setStat('s-resets',resets);
+      render(); renderPath();
+      log('↺ Back to start','info');
+    },250);
+  }
+}
+
+/* ─────── auto-run ─────── */
+function toggleRun(){
+  running=!running;
+  document.getElementById('btn-run').textContent=running?'Pause ⏸':'Auto-run ▷';
+  if(running){
+    function scheduleNext(){
+      const ms=parseInt(document.getElementById('speed').value);
+      timer=setTimeout(()=>{ if(running){ step(); scheduleNext(); } },ms);
+    }
+    scheduleNext();
+  } else {
+    clearTimeout(timer);
+  }
+}
+
+/* ─────── init ─────── */
+hardReset();
+</script>
+</body>
+</html>
